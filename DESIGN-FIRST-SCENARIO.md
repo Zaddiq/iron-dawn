@@ -1,6 +1,6 @@
 # Iron Dawn: first scenario (design draft for the owner's review)
 
-Status: rules, setup, computer players and a balance simulator are written and tested (`rules.js`, `scenario1.js`, `ai.js`, `tests/`). No screens yet. The numbers below are the ones the simulator settled on. All names, numbers and wording here are original to this project (working names, check any final title before selling).
+Status: rules, setup, computer players and a balance simulator are written and tested (`rules.js`, `scenario1.js`, `ai.js`, `tests/`). A solo board page (`index.html`: you play the humans, the computer plays the Prowler) is playable. The numbers below are the ones the simulator settled on. All names, numbers and wording here are original to this project (working names, check any final title before selling).
 
 ## The idea in one paragraph
 One giant walking war machine (the **Prowler**, the smallest of the machine line) pushes north through a ruined city toward a human **Field HQ**. A dozen human units are dug in and must stop it. The humans win by destroying the Prowler (or leaving it crawling and unable to fight) before it wrecks the HQ. The machine wins by destroying the HQ. Alternating turns, everything in the open, no secret orders.

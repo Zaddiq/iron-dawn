@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Iron Dawn: solo board</title>
+<style>
+:root{--bg:#f4f1ea;--fg:#1d1d1b;--mut:#6b675e;--line:#cfc9bb;--card:#fffdf8;--me:#1f6feb;--foe:#c92a2a;--clear:#e3dcc7;--rubble:#bfb39a;--ruins:#9a8f7c;--wreck:#4b4a46;--hit:#f59f00}
+@media (prefers-color-scheme:dark){:root{--bg:#171614;--fg:#ece8dd;--mut:#9d978a;--line:#3a3732;--card:#201e1b;--me:#6ea8fe;--foe:#ff6b6b;--clear:#3b372d;--rubble:#4d463a;--ruins:#625a49;--wreck:#16151300}}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.35 system-ui,sans-serif}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0;margin-right:auto} button,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button.pri{background:var(--me);color:#fff;border-color:var(--me)} button:disabled{opacity:.45;cursor:default}
+main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:10px;padding:10px}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+#board{width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;touch-action:manipulation}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px}
+.panel h2{font-size:14px;margin:0 0 6px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0}
+.tg{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left}
+.bar{height:10px;background:var(--line);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--foe)}
+#log{max-height:200px;overflow:auto;font-size:13px}#log div{padding:2px 0;border-bottom:1px dotted var(--line)}
+.mut{color:var(--mut)} .dead{text-decoration:line-through;color:var(--mut)}
+.ban{padding:10px;border-radius:8px;font-weight:600;margin-bottom:8px}
+text{pointer-events:none;font-family:system-ui,sans-serif}
+</style></head><body>
+<header><h1>Iron Dawn <span class="mut" style="font-weight:400;font-size:13px">solo board · you command the humans</span></h1>
+<select id="force"><option value="full">Full defence</option><option value="minus2">Two armor units fewer</option></select><button id="again">New game</button></header>
+<main><div><svg id="board"></svg></div>
+<div><div class="panel" id="turn"></div><div class="panel" id="sel"></div><div class="panel" id="mach"></div><div class="panel"><h2>What happened</h2><div id="log"></div></div></div></main>
+<script src="rules.js"></script><script src="scenario1.js"></script><script src="ai.js"></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id), R=Rules, SC=Scenario1;
+const SZ=30, SQ3=Math.sqrt(3);
+let S, phase="move", sel=null, hexes=null, off=new Set(), shown=0, busy=false;
+const px=(q,r)=>[SZ*SQ3*(q+r/2)+SZ*SQ3/2+4, SZ*1.5*r+SZ+4];
+const corner=(c,i)=>{ const a=Math.PI/180*(60*i-30); return [c[0]+SZ*Math.cos(a),c[1]+SZ*Math.sin(a)]; };
+const poly=c=>[0,1,2,3,4,5].map(i=>corner(c,i).map(v=>v.toFixed(1)).join(",")).join(" ");
+const LET={bulwark:"B",scout:"S",lancer:"L",skimmer:"K",longgun:"G",inf:"I",hq:"HQ"};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function start(){
+  S=SC.newScenario(Date.now()%100000,$("force").value); phase="move"; sel=null; hexes=null; off=new Set(); shown=0; $("log").innerHTML="";
+  S.log.push("The Prowler is coming up the middle from the south. Defend the Field HQ."); S.side="m"; AI.machineTurn(S); R.endTurn(S); phase="move"; draw();
+}
+const myTurn=()=>S.side==="h"&&!S.over&&!busy;
+function inReach(u){ return R.unitCanFire(S,u); }
+
+function draw(){
+  const W=S.cfg.W,H=S.cfg.H, svg=$("board"); const w=SZ*SQ3*(W+0.5)+8, h=SZ*1.5*H+SZ*0.5+12; svg.setAttribute("viewBox","0 0 "+w.toFixed(0)+" "+h.toFixed(0));
+  let g="";
+  for(const [k,t] of S.map){ const [q,r]=k.split(",").map(Number), c=px(q,r), can=hexes&&hexes.has(k);
+    const fill=t==="wreck"?"#3a3834":t==="ruins"?"var(--ruins)":t==="rubble"?"var(--rubble)":"var(--clear)";
+    g+=`<polygon data-q="${q}" data-r="${r}" points="${poly(c)}" fill="${fill}" stroke="${can?"var(--me)":"var(--line)"}" stroke-width="${can?3:1}"/>`;
+    if(t==="ruins") g+=`<path d="M${c[0]-9},${c[1]+7}h18v-12h-5v5h-8z" fill="none" stroke="var(--fg)" opacity=".35"/>`;
+    if(t==="rubble") g+=`<circle cx="${c[0]-6}" cy="${c[1]+4}" r="3" fill="var(--fg)" opacity=".25"/><circle cx="${c[0]+5}" cy="${c[1]-3}" r="2" fill="var(--fg)" opacity=".25"/><circle cx="${c[0]+4}" cy="${c[1]+6}" r="2.5" fill="var(--fg)" opacity=".25"/>`;
+    if(t==="wreck") g+=`<path d="M${c[0]-12},${c[1]-6}l24,12M${c[0]+12},${c[1]-6}l-24,12" stroke="#777" stroke-width="3"/>`; }
+  for(const u of S.units){ const c=px(u.q,u.r), mark=sel===u, fireOk=phase==="fire"&&inReach(u), inc=fireOk&&!off.has(u.id);
+    const fill=u.t==="hq"?"var(--me)":"var(--me)"; const stun=u.s>0;
+    g+=`<g data-u="${u.id}" style="cursor:pointer" opacity="${stun?.5:1}">`+
+      (u.t==="hq"?`<rect x="${c[0]-17}" y="${c[1]-17}" width="34" height="34" rx="5" fill="${fill}" stroke="${mark?"var(--hit)":"#fff"}" stroke-width="${mark?4:2}"/>`:
+       `<circle cx="${c[0]}" cy="${c[1]}" r="16" fill="${fill}" stroke="${mark?"var(--hit)":inc?"var(--hit)":"#fff"}" stroke-width="${mark||inc?4:2}" ${fireOk&&!inc?'stroke-dasharray="4 3"':""}/>`)+
+      `<text x="${c[0]}" y="${c[1]+5}" text-anchor="middle" font-size="${u.t==="hq"?13:15}" font-weight="700" fill="#fff">${LET[u.t]}${u.t==="inf"?u.sq:""}</text>`+(stun?`<text x="${c[0]+14}" y="${c[1]-10}" font-size="13" fill="var(--hit)" font-weight="700">z</text>`:"")+`<circle data-u="${u.id}" cx="${c[0]}" cy="${c[1]}" r="18" fill="transparent" style="pointer-events:all"/></g>`; }
+  const m=px(S.mach.q,S.mach.r); g+=`<g><polygon points="${m[0]-22},${m[1]+14} ${m[0]-26},${m[1]-6} ${m[0]-10},${m[1]-22} ${m[0]+10},${m[1]-22} ${m[0]+26},${m[1]-6} ${m[0]+22},${m[1]+14}" fill="var(--foe)" stroke="#fff" stroke-width="2"/><text x="${m[0]}" y="${m[1]+6}" text-anchor="middle" font-size="18" font-weight="800" fill="#fff">P</text></g>`;
+  svg.innerHTML=g; panels();
+}
+
+function panels(){
+  const m=S.mach, over=S.over;
+  let t="";
+  if(over) t=`<div class="ban" style="background:${over.winner==="humans"?"var(--me)":"var(--foe)"};color:#fff">${over.winner==="humans"?"The humans win.":"The machine wins."} ${esc(over.why)}</div>`;
+  else t=`<div><b>Turn ${S.turn} of ${S.cfg.maxTurns}</b> · <span class="mut">${S.side==="h"?"your move":"machine moving…"}</span></div>
+    <div class="row"><button id="bMove" ${myTurn()&&phase!=="move"?"":"disabled"}>Move phase</button><button id="bFire" class="${phase==="move"?"pri":""}" ${myTurn()&&phase==="move"?"":"disabled"}>Go to fire phase</button><button id="bEnd" class="${phase==="fire"?"pri":""}" ${myTurn()?"":"disabled"}>End turn</button></div>
+    <div class="mut">${phase==="move"?"Tap one of your units, then a blue-edged hex to move it. Stunned (z) units can't act.":"Tap units to include or leave out of the volley (solid edge = firing), then tap a target below."}</div>`;
+  $("turn").innerHTML=t;
+  const u=sel; let s="<h2>Selected</h2>";
+  if(!u) s+='<div class="mut">Nothing selected.</div>'; else { const T=R.TYPES[u.t]; s+=`<div><b>${R.NAME(u)}${u.t==="inf"?" ("+u.sq+")":""}</b> at ${u.q},${u.r}${u.s>0?" · stunned":""}</div><div class="mut">Power ${R.powerOf(u)} · Reach ${T.reach} · Armor ${R.armorOf(S,u)} (with cover) · Move ${T.move}${u.fired?" · has fired":""}</div>`; }
+  $("sel").innerHTML=s;
+  /* the Prowler */
+  const parts=m.parts; let h=`<h2>The Prowler</h2><div class="row"><span>Treads ${m.treads}/${S.cfg.treadBoxes}</span><span class="mut">Move ${R.machMove(S)}</span></div><div class="bar"><i style="width:${100*m.treads/S.cfg.treadBoxes}%"></i></div>`;
+  const shooters=phase==="fire"&&myTurn()?S.units.filter(x=>inReach(x)&&!off.has(x.id)):[], pw=shooters.reduce((a,x)=>a+R.powerOf(x),0);
+  const line=(label,armor,alive,tag,stun,extra,fn)=>{ const o=pw&&alive?AI.odds(S,pw,armor,stun):null;
+    return `<button class="tg ${alive?"":"dead"}" data-t="${fn}" ${o?"":"disabled"}><span>${label}${stun?" (jammed)":""}</span><span class="mut">${alive?"Armor "+armor+(o?" · destroy "+Math.round(o.d*100)+"%":""):"gone"}${extra||""}</span></button>`; };
+  const names={main:"Main cannon",side:"Side gun",missile:"Missile",ap:"Anti-troop gun"};
+  for(const k of ["main","side","missile","ap"]) { const ps=parts.filter(p=>p.k===k); if(k==="ap"){ h+=`<div class="mut">Anti-troop guns: ${ps.filter(p=>p.alive).length} left (they only hurt infantry, so they're not worth shooting at)</div>`; continue; }
+    ps.forEach((p,i)=>{ h+=line(names[k]+(ps.length>1?" "+(i+1):""),p.armor,p.alive&&!(k==="missile"&&!p.ammo),k,p.s>0,k==="missile"?(p.ammo?" · loaded":" · fired"):"",p.id); }); }
+  if(m.treads>0){ const o=pw?AI.odds(S,pw,S.cfg.treadArmor,false):null; h+=`<button class="tg" data-t="treads" ${o?"":"disabled"}><span>Treads</span><span class="mut">${o?"lose "+Math.round(o.d*pw)+" boxes at best, "+Math.round(o.d*100)+"% full hit":"-"}</span></button>`; }
+  h+=pw?`<div class="mut" style="margin-top:6px">Volley: ${shooters.length} unit${shooters.length>1?"s":""}, total Power ${pw}</div>`:(phase==="fire"&&myTurn()?'<div class="mut" style="margin-top:6px">Nothing is in range to fire.</div>':"");
+  $("mach").innerHTML=h;
+  const L=$("log"); for(;shown<S.log.length;shown++){ const d=document.createElement("div"); d.textContent=S.log[shown]; L.appendChild(d); } L.scrollTop=L.scrollHeight;
+  if($("bMove")){ $("bMove").onclick=()=>{ phase="move"; hexes=null; draw(); }; $("bFire").onclick=()=>{ phase="fire"; hexes=null; draw(); }; $("bEnd").onclick=endTurn; }
+  document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>fire(b.dataset.t));
+}
+
+function fire(id){
+  if(!myTurn()||phase!=="fire") return; const sh=S.units.filter(x=>inReach(x)&&!off.has(x.id)); if(!sh.length) return;
+  const tg=id==="treads"?"treads":S.mach.parts.find(p=>p.id===id); R.humanFire(S,sh,tg); off.clear();
+  if(R.machDefeated(S)) { R.endTurn(S); } draw();
+}
+function endTurn(){
+  if(!myTurn()) return; busy=true; sel=null; hexes=null; off.clear(); R.endTurn(S); draw();
+  if(S.over){ busy=false; draw(); return; }
+  setTimeout(()=>{ AI.machineTurn(S); if(!S.over) R.endTurn(S); busy=false; phase="move"; draw(); },500);
+}
+$("board").addEventListener("click",e=>{
+  const uid=e.target.dataset.u, q=e.target.dataset.q;
+  if(!myTurn()) return;
+  if(uid){ const u=S.units.find(x=>x.id==uid); if(!u) return;
+    if(phase==="fire"){ if(inReach(u)){ off.has(u.id)?off.delete(u.id):off.add(u.id); } sel=u; }
+    else { sel=u; hexes=(u.t!=="hq"&&u.s===0&&!u.moved)?R.reach(S,u):null; if(hexes) hexes.delete(R.key(u.q,u.r)); }
+    draw(); return; }
+  if(q!==undefined&&phase==="move"&&sel&&hexes){ const k=q+","+e.target.dataset.r; if(hexes.has(k)){ R.humanMove(S,sel,+q,+e.target.dataset.r); hexes=null; } else { sel=null; hexes=null; } draw(); }
+});
+$("again").onclick=start; $("force").onchange=start; start();
+</script></body></html>

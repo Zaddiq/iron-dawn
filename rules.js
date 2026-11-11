@@ -24,6 +24,7 @@ const CFG={
   crushCost:{bulwark:3,lancer:2,scout:1,skimmer:1,longgun:1,inf:0,hq:0},
   maxTurns:14
 };
+const PARTNAME={main:"main cannon",side:"side gun",missile:"missile",ap:"anti-troop gun"};
 const TYPES={
   bulwark:{name:"Bulwark",power:4,reach:2,armor:3,move:3,value:6},
   scout:{name:"Scout",power:2,reach:2,armor:2,move:4,value:3},
@@ -59,6 +60,8 @@ function newGame(seed,cfgOver){
 }
 function addUnit(s,type,q,r,sq){ const u={id:s.nextId++,t:type,q,r,sq:type==="inf"?(sq||1):0,s:0,fired:false,moved:false}; s.units.push(u); return u; }
 
+const note=(s,t)=>{ s.log.push(t); };
+const NAME=u=>u.t==='inf'?'Rifle Squads':TYPES[u.t].name;
 const die=s=>1+Math.floor(s.rng()*6);
 const unitsAt=(s,q,r)=>s.units.filter(u=>u.q===q&&u.r===r);
 const isInf=u=>u.t==="inf";
@@ -122,15 +125,18 @@ function machWalk(s,path){
   for(const h of path){
     const c=s.cfg.cost[terrain(s,h.q,h.r)]; if(n>0&&c>pts) break; pts-=c; n++;
     s.mach.q=h.q; s.mach.r=h.r;
-    for(const u of unitsAt(s,h.q,h.r).slice()){ s.mach.treads=Math.max(0,s.mach.treads-(s.cfg.crushCost[u.t]||0)); remove(s,u); if(u.t==="hq") s.over={winner:"machine",why:"The Prowler crushed the Field HQ."}; }
+    for(const u of unitsAt(s,h.q,h.r).slice()){ s.mach.treads=Math.max(0,s.mach.treads-(s.cfg.crushCost[u.t]||0)); remove(s,u); note(s,"The Prowler crushes "+NAME(u)+(s.cfg.crushCost[u.t]?" and loses "+s.cfg.crushCost[u.t]+" tread boxes.":".")); if(u.t==="hq") s.over={winner:"machine",why:"The Prowler crushed the Field HQ."}; }
     if(s.over||pts<=0||machMove(s)<1) break;
   }
+  if(n) note(s,"The Prowler moves "+n+" hex"+(n>1?"es":"")+".");
   return n;
 }
 /* fire the listed parts together at a human unit (or at nothing) */
 function machFire(s,parts,u){
   let power=0; for(const p of parts){ if(!partFires(p)) continue; if(p.infOnly&&!isInf(u)) continue; if(dist(s.mach,u)>p.reach) continue; power+=p.power; p.fired=true; if(p.k==="missile") p.ammo--; }
-  return power>0?Object.assign({power},hitUnit(s,u,power)):null;
+  if(power<=0) return null; const x=Object.assign({power},hitUnit(s,u,power));
+  note(s,"The Prowler fires (Power "+power+") at "+NAME(u)+": rolled "+x.roll+", total "+x.total+" = "+(x.result==="destroy"?(isInf(u)?"stack destroyed":"destroyed"):x.result==="stun"?(isInf(u)?"one squad lost":"stunned"):"no effect")+".");
+  return x;
 }
 
 /* ---------- the humans ---------- */
@@ -139,7 +145,9 @@ function unitCanFire(s,u){ return u.t!=="hq"&&u.s===0&&!u.fired&&TYPES[u.t].reac
 function humanFire(s,units,target){
   let power=0; for(const u of units){ if(!unitCanFire(s,u)) continue; power+=powerOf(u); u.fired=true; }
   if(power<=0) return null;
-  return Object.assign({power},target==="treads"?hitTreads(s,power):hitPart(s,target,power));
+  const x=Object.assign({power},target==="treads"?hitTreads(s,power):hitPart(s,target,power));
+  note(s,"Your fire (Power "+power+") at the Prowler's "+(target==="treads"?"treads":PARTNAME[target.k]+(target.k==="side"||target.k==="missile"||target.k==="ap"?" "+(+target.id.slice(target.k.length)+1):""))+": rolled "+x.roll+", total "+x.total+" = "+(target==="treads"?(x.lost?x.lost+" tread boxes lost":"no effect"):x.result==="destroy"?"destroyed":x.result==="stun"?"jammed for a turn":"no effect")+".");
+  return x;
 }
 /* hexes a unit may reach this turn: {hex key -> cost}. Friends can be passed through, not ended on if full. */
 function reach(s,u){
@@ -173,6 +181,6 @@ function endTurn(s){
   if(!s.over) startTurn(s);
 }
 
-return {CFG,TYPES,DIRS,key,dist,mulberry32,buildMap,newGame,addUnit,die,unitsAt,isInf,armorOf,powerOf,terrain,onMap,roll,hitUnit,hitPart,hitTreads,remove,
+return {CFG,TYPES,PARTNAME,NAME,note,DIRS,key,dist,mulberry32,buildMap,newGame,addUnit,die,unitsAt,isInf,armorOf,powerOf,terrain,onMap,roll,hitUnit,hitPart,hitTreads,remove,
   machMove,partFires,machWeapons,machDefeated,machPath,machWalk,machFire,unitCanFire,humanFire,reach,humanMove,startTurn,endTurn};
 });
